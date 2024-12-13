@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { parseTOML } = require("confbox");
+const { addTag, getTagList } = require("../../services/videoTag");
 
 const videoExtensions = [
   ".mp4",
@@ -19,6 +20,8 @@ const videoIdDirMap = new Map();
 const VIDEO_PATH_BASE = "videos";
 
 module.exports = async function (fastify, opts) {
+  fastify.post("/video/addTag", addTag);
+  fastify.post("/video/getTagList", getTagList);
   fastify.get("/videos", async function (request, reply) {
     const dirList = process.env.video_dir.split(",");
     const result = readDirList(dirList);
