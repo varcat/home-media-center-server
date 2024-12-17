@@ -1,3 +1,4 @@
+\c postgres
 create schema media_center;
 set search_path to media_center;
 
@@ -45,8 +46,8 @@ create table video
 
 create table video_tag
 (
-    id   serial primary key,
-    name text
+    id        serial primary key,
+    name      text
 );
 
 create table relation_video_tag
@@ -66,3 +67,12 @@ create table relation
     id_b    int
 );
 comment on table relation is '通用关联表';
+
+create table play_record
+(
+    id       serial primary key,
+    type     text, -- video music
+    media_id int,
+    duration text,
+    user_id  int
+)

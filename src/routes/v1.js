@@ -1,7 +1,8 @@
-const fs = require("node:fs");
-const path = require("node:path");
-const { parseTOML } = require("confbox");
-const { addTag, getTagList } = require("../../services/videoTag");
+import fs from "node:fs";
+import path from "node:path";
+import { parseTOML } from "confbox";
+import { addOrEditTag, getTags, deleteTag } from "../modules/tag/service.js";
+import { addVideoOpts, getVideoList } from "../modules/video/service.js";
 
 const videoExtensions = [
   ".mp4",
@@ -19,15 +20,12 @@ const videoIdDirMap = new Map();
 
 const VIDEO_PATH_BASE = "videos";
 
-module.exports = async function (fastify, opts) {
-  fastify.post("/video/addTag", addTag);
-  fastify.post("/video/getTagList", getTagList);
-  fastify.get("/videos", async function (request, reply) {
-    const dirList = process.env.video_dir.split(",");
-    const result = readDirList(dirList);
-    return result;
-  });
-
+export default async function (fastify, opts) {
+  fastify.post("/tag/addOrEdit", addOrEditTag);
+  fastify.get("/tag/list", getTags);
+  fastify.post("/tag/delete", deleteTag);
+  fastify.post("/video/list", getVideoList);
+  fastify.post("/video/add", addVideoOpts);
   fastify.get("/video/:vid", async (request, reply) => {
     const { vid } = request.params;
     let vidPath = videoIdDirMap.get(vid);
@@ -42,7 +40,7 @@ module.exports = async function (fastify, opts) {
 
     return getEpisodes(vidPath, vid);
   });
-};
+}
 
 function initVideoIdDirMap() {
   const dirList = process.env.video_dir.split(",");

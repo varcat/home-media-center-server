@@ -1,31 +1,29 @@
 {
   "name": "home-media-center-server",
   "version": "1.0.0",
-  "description": "This project was bootstrapped with Fastify-CLI.",
-  "main": "app.js",
-  "directories": {
-    "test": "test"
-  },
+  "main": "index.js",
   "scripts": {
-    "test": "node --test test/**/*.test.js",
-    "start": "fastify start -l info app.js",
-    "dev": "fastify start -w -l info -P app.js"
+    "build": "tsc -p tsconfig.json",
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/dotenv": "^6.1.1",
+    "@types/node": "^22.10.2",
+    "prettier": "^3.4.2"
+  },
   "dependencies": {
-    "@fastify/autoload": "^5.0.0",
-    "@fastify/sensible": "^5.0.0",
     "confbox": "^0.1.8",
-    "dotenv": "^16.4.5",
-    "fastify": "^4.26.1",
-    "fastify-cli": "^6.1.1",
-    "fastify-plugin": "^4.0.0",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.0",
+    "nanoid": "^5.0.9",
+    "pg": "^8.13.1",
+    "pg-format": "^1.0.4",
     "wsp-toolkit": "^0.6.0"
   },
-  "devDependencies": {
-    "@types/node": "^22.9.0",
-    "prettier": "^3.3.3"
-  }
+  "type": "module"
 }
