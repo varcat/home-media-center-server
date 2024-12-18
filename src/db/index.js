@@ -22,11 +22,11 @@ export const transaction = async (fn) => {
   }
 };
 
-export const query = async (text, params) => {
+export const query = async (text, params = [], { db = pg } = {}) => {
   if (text instanceof Sql) {
     text = text.toString();
   }
-  return pg.query(text, params);
+  return db.query(text, params);
 };
 
 export const sqlAnd = (conditions) => {
@@ -66,8 +66,14 @@ export const sqlLike = (fieldName, val) => {
   return sqlFmt(`%s like %L`, fieldName, `%${val}%`);
 };
 
+const SqlOp = {
+  select: "select",
+  delete: "delete",
+  insert: "insert",
+  count: "count",
+};
 export class Sql {
-  #text = "SELECT 'emm' AS emm;";
+  #text = "";
   #tableName;
   #tableNameAlias;
   #andConditions = [];
@@ -88,7 +94,7 @@ export class Sql {
     } else {
       throw new Error("name 不能为空");
     }
-    this.#tableName = tableName;
+    this.#tableName = sqlFmt(`%I`, tableName);
     this.#tableNameAlias = alias;
   }
 
@@ -97,7 +103,7 @@ export class Sql {
   }
 
   select(...colNameList) {
-    this.#operation = "select";
+    this.#operation = SqlOp.select;
     this.#colNameList = colNameList.reduce((res, x) => {
       if (typeof x === "string") {
         res.push(x);
@@ -110,13 +116,18 @@ export class Sql {
   }
 
   insert(...colNameList) {
-    this.#operation = "insert";
+    this.#operation = SqlOp.insert;
     this.#colNameList = colNameList;
     return this;
   }
 
   delete() {
-    this.#operation = "delete";
+    this.#operation = SqlOp.delete;
+    return this;
+  }
+
+  count() {
+    this.#operation = SqlOp.count;
     return this;
   }
 
@@ -133,22 +144,33 @@ export class Sql {
   }
 
   values(...xs) {
-    this.#insertValues.push(
-      ...xs.map((row) => {
-        return `(${row.map((v) => sqlFmt("%L", v)).join(",")})`;
-      }),
-    );
+    this.#insertValues.push(...xs);
     return this;
   }
 
-  and(...conditions) {
-    this.#andConditions.push(...conditions.filter(isExist));
+  where({ fmt, logic = "and" }, ...val) {
+    const condition = sqlFmt(fmt, ...val);
+    if (logic === "and") {
+      this.#andConditions.push(condition);
+    } else {
+      this.#orConditions.push(condition);
+    }
     return this;
   }
 
-  or(...conditions) {
-    this.#orConditions.push(...conditions.filter(isExist));
+  andAll(...conditions) {
+    conditions.filter(isExist).forEach((condition) => {
+      this.and(condition);
+    });
     return this;
+  }
+
+  and(fmt, ...val) {
+    return this.where({ fmt, logic: "and" }, ...val);
+  }
+
+  or(fmt, ...val) {
+    return this.where({ fmt, logic: "or" }, ...val);
   }
 
   offset(offset) {
@@ -167,7 +189,7 @@ export class Sql {
     const where = sqlAnd(this.#andConditions.concat(sqlOr(this.#orConditions)));
 
     switch (this.#operation) {
-      case "select":
+      case SqlOp.select:
         const cols = isEmpty(this.#colNameList)
           ? "*"
           : this.#colNameList.join(", ");
@@ -184,14 +206,35 @@ export class Sql {
           text += ` LIMIT ${this.#limit}`;
         }
         break;
-      case "insert":
+      case SqlOp.insert:
         if (isEmpty(this.#insertValues)) break;
         const fields = this.#colNameList.join(",");
-        text = `INSERT INTO ${this.#tableName} (${fields}) VALUES ${this.#insertValues.join(",")} RETURNING ${fields};`;
+        const values = this.#insertValues.map((row) => {
+          if (row.length !== this.#colNameList.length) {
+            throw new Error(
+              `粗心鬼，insert 的 columns.length 和 values.length 不相等`,
+            );
+          }
+          return `(${row.map((v) => sqlFmt("%L", v)).join(",")})`;
+        });
+
+        text = `INSERT INTO ${this.#tableName} (${fields}) VALUES ${values.join(",")} RETURNING ${fields};`;
         break;
-      case "delete":
-        if (isEmpty(where)) break;
+      case SqlOp.delete:
+        if (isEmpty(where)) {
+          throw new Error("怎么肥事？delete 语句没有 where 条件哦");
+        }
         text = `DELETE FROM ${this.#tableName} WHERE ${where};`;
+        break;
+      case SqlOp.count:
+        text = `SELECT count(1)::int AS count FROM ${this.#tableName}`;
+        if (!isEmpty(where)) {
+          text += ` WHERE ${where}`;
+        }
+        break;
+      default:
+        text = ``;
+        break;
     }
 
     return text;

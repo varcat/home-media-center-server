@@ -41,13 +41,14 @@ create table video
     title        text,
     release_year int,
     cover_img    text,
-    path         text
+    path         text,
+    content      text
 );
 
 create table video_tag
 (
-    id        serial primary key,
-    name      text
+    id   serial primary key,
+    name text
 );
 
 create table relation_video_tag

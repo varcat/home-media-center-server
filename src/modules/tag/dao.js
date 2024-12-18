@@ -16,3 +16,13 @@ export async function queryTag({ idIn, name }) {
   const { rows } = await query(text);
   return rows;
 }
+
+export async function checkExistTag(name, id) {
+  const text =
+    `select count(id) as count
+     from media_center.video_tag
+     where name = ${sqlFmt("%L", name)}` +
+    (id ? ` and id != ${sqlFmt("%L::int", id)}` : "");
+  const res = await query(text);
+  return res.rows[0].count > 0;
+}

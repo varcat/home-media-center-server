@@ -2,7 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseTOML } from "confbox";
 import { addOrEditTag, getTags, deleteTag } from "../modules/tag/service.js";
-import { addVideoOpts, getVideoList } from "../modules/video/service.js";
+import {
+  addVideoOpts,
+  deleteVideoOpts,
+  getVideoList,
+} from "../modules/video/service.js";
+import { Sql, sqlFmt } from "../db/index.js";
+
+function testSql(req) {
+  return Sql.of("user_ac").and("id = 1").toString();
+}
 
 const videoExtensions = [
   ".mp4",
@@ -26,6 +35,7 @@ export default async function (fastify, opts) {
   fastify.post("/tag/delete", deleteTag);
   fastify.post("/video/list", getVideoList);
   fastify.post("/video/add", addVideoOpts);
+  fastify.post("/video/delete", deleteVideoOpts);
   fastify.get("/video/:vid", async (request, reply) => {
     const { vid } = request.params;
     let vidPath = videoIdDirMap.get(vid);
@@ -40,6 +50,7 @@ export default async function (fastify, opts) {
 
     return getEpisodes(vidPath, vid);
   });
+  fastify.get("/test/sql", testSql);
 }
 
 function initVideoIdDirMap() {

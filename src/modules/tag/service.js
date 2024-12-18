@@ -1,4 +1,5 @@
-import { query, Sql, sqlFmt } from "../../db/index.js";
+import { query, Sql, sqlFmt, transaction } from "../../db/index.js";
+import { checkExistTag } from "./dao.js";
 
 export async function getTags() {
   const res = await query(Sql.of("video_tag").select("id", "name"));
@@ -6,14 +7,6 @@ export async function getTags() {
     ok: true,
     data: res.rows,
   };
-}
-
-async function checkExistTag(name, id) {
-  const text =
-    `select count(id) as count from media_center.video_tag where name = ${sqlFmt("%L", name)}` +
-    (id ? ` and id != ${sqlFmt("%L::int", id)}` : "");
-  const res = await query(text);
-  return res.rows[0].count > 0;
 }
 
 export const addOrEditTag = {
@@ -69,7 +62,14 @@ export const deleteTag = {
   },
   async handler(req) {
     const { id } = req.body;
-    await query(Sql.of("video_tag").delete().and(sqlFmt("id = %L", id)));
+    await transaction(async (db) => {
+      await db.query(
+        Sql.of("video_tag").delete().and(sqlFmt("id = %L", id)).toString(),
+      );
+      await db.query(
+        Sql.of("relation_video_tag").delete().and(sqlFmt("tag_id = %L"), id),
+      );
+    });
     return { ok: true };
   },
 };

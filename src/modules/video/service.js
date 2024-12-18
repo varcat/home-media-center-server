@@ -30,18 +30,25 @@ export const getVideoList = {
     const { offset, limit, tags, title, releaseDate } = req.body;
     const hasTag = !isEmpty(tags);
 
+    const conditions = [
+      sqlLike("v.title", title),
+      releaseDate && sqlFmt("v.release_year = %L", releaseDate),
+      hasTag
+        ? `EXISTS(${Sql.of(["relation_video_tag", "r"]).select("id").and("r.video_id = v.id").and(sqlIn("r.tag_id", tags))}})`
+        : null,
+    ];
+
     const { rows: videos } = await query(
       Sql.of(["video", "v"])
         .select("v.id", "v.title", "v.release_year", "v.cover_img", "v.path")
-        .and(
-          sqlLike("v.title", title),
-          releaseDate && sqlFmt("v.release_year = %L", releaseDate),
-          hasTag
-            ? `EXISTS(${Sql.of(["relation_video_tag", "r"]).select("id").and("r.video_id = v.id", sqlIn("r.tag_id", tags))}})`
-            : null,
-        )
+        .andAll(...conditions)
         .offset(offset)
         .limit(limit),
+    );
+    const { rows: videoCont } = await query(
+      Sql.of(["video", "v"])
+        .andAll(...conditions)
+        .count(),
     );
     if (isEmpty(videos)) {
       return { ok: true, data: [] };
@@ -61,7 +68,7 @@ export const getVideoList = {
       };
       return res;
     }, {});
-    const data = videos.map((v) => {
+    const rows = videos.map((v) => {
       return {
         id: v.id,
         title: v.title,
@@ -77,7 +84,13 @@ export const getVideoList = {
       };
     });
 
-    return { ok: true, data };
+    return {
+      ok: true,
+      data: {
+        rows,
+        total: videoCont[0].count,
+      },
+    };
   },
 };
 
@@ -97,6 +110,7 @@ export const addVideoOpts = {
   },
   async handler(req, reply) {
     const { title, dirPath, coverImgName, releaseDate, tags } = req.body;
+
     let statInfo;
     try {
       statInfo = fs.statSync(dirPath);
@@ -110,6 +124,19 @@ export const addVideoOpts = {
       });
       return;
     }
+
+    const { base } = path.parse(dirPath);
+    const { rows: countInfo } = await query(
+      Sql.of("video").count().and(sqlFmt("path = %L", base)),
+    );
+    if (countInfo?.[0]?.count > 0) {
+      reply.send({
+        ok: false,
+        msg: `dirPath 目录不正确,已在数据库中存有`,
+      });
+      return;
+    }
+
     const dirName = genId();
     await transaction(async (db) => {
       const { rows } = await db.query(
@@ -126,6 +153,33 @@ export const addVideoOpts = {
         );
       }
       fs.renameSync(dirPath, path.resolve(process.env.video_dir, dirName));
+    });
+    return { ok: true };
+  },
+};
+
+export const deleteVideoOpts = {
+  schema: {
+    body: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "integer" },
+      },
+    },
+  },
+  async handler(req) {
+    const { id } = req.body;
+    await transaction(async (db) => {
+      await db.query(
+        Sql.of("video").delete().and(sqlFmt("id = %L", id)).toString(),
+      );
+      await db.query(
+        Sql.of("relation_video_tag")
+          .delete()
+          .and("video_id = %L", id)
+          .toString(),
+      );
     });
     return { ok: true };
   },
