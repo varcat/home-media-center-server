@@ -6,6 +6,9 @@ import {
   addVideoOpts,
   deleteVideoOpts,
   getVideoList,
+  getVideoOpts,
+  getVideoEditDataOpts,
+  updateVideoOpts,
 } from "../modules/video/service.js";
 import { Sql, sqlFmt } from "../db/index.js";
 
@@ -30,27 +33,33 @@ const videoIdDirMap = new Map();
 const VIDEO_PATH_BASE = "videos";
 
 export default async function (fastify, opts) {
+  fastify.get("/test/sql", testSql);
+
   fastify.post("/tag/addOrEdit", addOrEditTag);
   fastify.get("/tag/list", getTags);
   fastify.post("/tag/delete", deleteTag);
+
   fastify.post("/video/list", getVideoList);
   fastify.post("/video/add", addVideoOpts);
   fastify.post("/video/delete", deleteVideoOpts);
-  fastify.get("/video/:vid", async (request, reply) => {
-    const { vid } = request.params;
-    let vidPath = videoIdDirMap.get(vid);
-    if (!vidPath) {
-      initVideoIdDirMap();
-    }
-    vidPath = videoIdDirMap.get(vid);
-    if (!vidPath) {
-      reply.code(404);
-      return `无当前vid: ${vid} 的视频`;
-    }
+  fastify.post("/video/update", updateVideoOpts);
+  fastify.get("/video/:vid", getVideoOpts);
+  fastify.get("/video/editData", getVideoEditDataOpts);
+}
 
-    return getEpisodes(vidPath, vid);
-  });
-  fastify.get("/test/sql", testSql);
+async function t(request, reply) {
+  const { vid } = request.params;
+  let vidPath = videoIdDirMap.get(vid);
+  if (!vidPath) {
+    initVideoIdDirMap();
+  }
+  vidPath = videoIdDirMap.get(vid);
+  if (!vidPath) {
+    reply.code(404);
+    return `无当前vid: ${vid} 的视频`;
+  }
+
+  return getEpisodes(vidPath, vid);
 }
 
 function initVideoIdDirMap() {

@@ -66,11 +66,17 @@ export const sqlLike = (fieldName, val) => {
   return sqlFmt(`%s like %L`, fieldName, `%${val}%`);
 };
 
+export const sqlEq = (field, val) => {
+  if (val === undefined) return "";
+  return sqlFmt("%s = %L", field, val);
+};
+
 const SqlOp = {
   select: "select",
   delete: "delete",
   insert: "insert",
   count: "count",
+  update: "update",
 };
 export class Sql {
   #text = "";
@@ -82,7 +88,7 @@ export class Sql {
   #offset;
   #limit;
   #operation;
-  #insertValues = [];
+  #values = [];
 
   constructor(name) {
     let tableName, alias;
@@ -94,7 +100,7 @@ export class Sql {
     } else {
       throw new Error("name 不能为空");
     }
-    this.#tableName = sqlFmt(`%I`, tableName);
+    this.#tableName = tableName;
     this.#tableNameAlias = alias;
   }
 
@@ -131,6 +137,11 @@ export class Sql {
     return this;
   }
 
+  update(data) {
+    this.#operation = SqlOp.update;
+    return this;
+  }
+
   insertOne(data) {
     const keys = [];
     const vals = [];
@@ -139,12 +150,12 @@ export class Sql {
       keys.push(k);
       vals.push(v);
     }
-    this.insert(keys).values(vals);
+    this.insert(...keys).values(vals);
     return this;
   }
 
-  values(...xs) {
-    this.#insertValues.push(...xs);
+  values(...rowValue) {
+    this.#values.push(...rowValue);
     return this;
   }
 
@@ -166,11 +177,13 @@ export class Sql {
   }
 
   and(fmt, ...val) {
-    return this.where({ fmt, logic: "and" }, ...val);
+    this.where({ fmt, logic: "and" }, ...val);
+    return this;
   }
 
   or(fmt, ...val) {
-    return this.where({ fmt, logic: "or" }, ...val);
+    this.where({ fmt, logic: "or" }, ...val);
+    return this;
   }
 
   offset(offset) {
@@ -187,14 +200,17 @@ export class Sql {
     let text = this.#text;
 
     const where = sqlAnd(this.#andConditions.concat(sqlOr(this.#orConditions)));
+    const tableName = this.#tableNameAlias
+      ? sqlFmt("%I AS %I", this.#tableName, this.#tableNameAlias)
+      : sqlFmt("%I", this.#tableName);
 
     switch (this.#operation) {
       case SqlOp.select:
         const cols = isEmpty(this.#colNameList)
           ? "*"
           : this.#colNameList.join(", ");
-        const alias = this.#tableNameAlias ? ` AS ${this.#tableNameAlias}` : "";
-        text = `SELECT ${cols} FROM ${this.#tableName}${alias}`;
+
+        text = `SELECT ${cols} FROM ${tableName}`;
 
         if (!isEmpty(where)) {
           text += ` WHERE ${where}`;
@@ -207,9 +223,14 @@ export class Sql {
         }
         break;
       case SqlOp.insert:
-        if (isEmpty(this.#insertValues)) break;
+        if (isEmpty(this.#values)) break;
         const fields = this.#colNameList.join(",");
-        const values = this.#insertValues.map((row) => {
+        const returningFields = this.#colNameList.concat(
+          this.#colNameList.includes("id") ? [] : ["id"],
+        );
+
+        const values = this.#values.map((row) => {
+          console.log(this.#colNameList, row);
           if (row.length !== this.#colNameList.length) {
             throw new Error(
               `粗心鬼，insert 的 columns.length 和 values.length 不相等`,
@@ -218,25 +239,25 @@ export class Sql {
           return `(${row.map((v) => sqlFmt("%L", v)).join(",")})`;
         });
 
-        text = `INSERT INTO ${this.#tableName} (${fields}) VALUES ${values.join(",")} RETURNING ${fields};`;
+        text = `INSERT INTO ${tableName} (${fields}) VALUES ${values.join(",")} RETURNING ${returningFields};`;
         break;
       case SqlOp.delete:
         if (isEmpty(where)) {
           throw new Error("怎么肥事？delete 语句没有 where 条件哦");
         }
-        text = `DELETE FROM ${this.#tableName} WHERE ${where};`;
+        text = `DELETE FROM ${tableName} WHERE ${where};`;
         break;
       case SqlOp.count:
-        text = `SELECT count(1)::int AS count FROM ${this.#tableName}`;
+        text = `SELECT count(1)::int AS count FROM ${tableName}`;
         if (!isEmpty(where)) {
           text += ` WHERE ${where}`;
         }
         break;
       default:
-        text = ``;
+        text = `SELECT 0;`;
         break;
     }
-
+    console.log(text);
     return text;
   }
 }

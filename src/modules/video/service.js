@@ -12,6 +12,7 @@ import {
 import { genId, toNginxUrl } from "../../utils/index.js";
 import { isEmpty, typeOf } from "wsp-toolkit";
 import { queryTag } from "../tag/dao.js";
+import { queryVideo } from "./dao.js";
 
 export const getVideoList = {
   schema: {
@@ -28,88 +29,56 @@ export const getVideoList = {
   },
   async handler(req, reply) {
     const { offset, limit, tags, title, releaseDate } = req.body;
-    const hasTag = !isEmpty(tags);
-
-    const conditions = [
-      sqlLike("v.title", title),
-      releaseDate && sqlFmt("v.release_year = %L", releaseDate),
-      hasTag
-        ? `EXISTS(${Sql.of(["relation_video_tag", "r"]).select("id").and("r.video_id = v.id").and(sqlIn("r.tag_id", tags))}})`
-        : null,
-    ];
-
-    const { rows: videos } = await query(
-      Sql.of(["video", "v"])
-        .select("v.id", "v.title", "v.release_year", "v.cover_img", "v.path")
-        .andAll(...conditions)
-        .offset(offset)
-        .limit(limit),
-    );
-    const { rows: videoCont } = await query(
-      Sql.of(["video", "v"])
-        .andAll(...conditions)
-        .count(),
-    );
-    if (isEmpty(videos)) {
-      return { ok: true, data: [] };
-    }
-    const { rows: relations } = await query(
-      `SELECT tag_id, video_id FROM relation_video_tag WHERE ${sqlIn(
-        "video_id",
-        videos.map((x) => x.id),
-      )}`,
-    );
-
-    const tagList = await queryTag({ idIn: relations.map((x) => x.tag_id) });
-    const tagMap = tagList.reduce((res, tag) => {
-      res[tag.id] = {
-        id: tag.id,
-        name: tag.name,
-      };
-      return res;
-    }, {});
-    const rows = videos.map((v) => {
-      return {
-        id: v.id,
-        title: v.title,
-        releaseDate: v.release_year,
-        coverImg: toNginxUrl(v.path, v.cover_img),
-        tags: relations.reduce((res, r) => {
-          if (r.video_id === v.id) {
-            const tag = tagMap[r.tag_id];
-            res.push(tag);
-          }
-          return res;
-        }, []),
-      };
+    const { rows, count } = await queryVideo({
+      offset,
+      limit,
+      title,
+      tagIdList: tags,
+      releaseDate,
     });
 
     return {
       ok: true,
       data: {
         rows,
-        total: videoCont[0].count,
+        total: count,
       },
     };
   },
 };
 
+const genVideoBodySchema = (isUpdate = false) => {
+  const required = ["title", "dirPath", "coverImgName", "releaseDate"];
+  const properties = {
+    title: { type: "string" },
+    dirPath: { type: "string" },
+    coverImgName: { type: "string" },
+    releaseDate: { type: "integer", minimum: 1900, maximum: 2099 },
+    content: { type: "string" },
+    tags: { type: "array", uniqueItems: true, items: { type: "integer" } },
+  };
+
+  if (isUpdate) {
+    required.push("id");
+    properties.id = {
+      type: "integer",
+    };
+  }
+
+  return {
+    type: "object",
+    required,
+    properties,
+  };
+};
+
 export const addVideoOpts = {
   schema: {
-    body: {
-      type: "object",
-      required: ["title", "dirPath", "coverImgName", "releaseDate"],
-      properties: {
-        title: { type: "string" },
-        dirPath: { type: "string" },
-        coverImgName: { type: "string" },
-        releaseDate: { type: "integer", minimum: 1900, maximum: 2099 },
-        tags: { type: "array", uniqueItems: true, items: { type: "integer" } },
-      },
-    },
+    body: genVideoBodySchema(),
   },
   async handler(req, reply) {
-    const { title, dirPath, coverImgName, releaseDate, tags } = req.body;
+    const { title, dirPath, coverImgName, releaseDate, tags, content } =
+      req.body;
 
     let statInfo;
     try {
@@ -140,16 +109,24 @@ export const addVideoOpts = {
     const dirName = genId();
     await transaction(async (db) => {
       const { rows } = await db.query(
-        `insert into video (title, release_year, cover_img, path) values ($1,$2,$3,$4) returning id`,
-        [title, releaseDate, coverImgName, dirName],
+        Sql.of("video")
+          .insertOne({
+            title,
+            release_year: releaseDate,
+            cover_img: coverImgName,
+            path: dirName,
+            content,
+          })
+          .toString(),
       );
       if (Array.isArray(tags)) {
         const videoId = rows[0].id;
-        const values = tags
-          .map((tagId) => sqlFmt("(%s, %L)", videoId, tagId))
-          .join(",");
+        const values = tags.map((tagId) => [videoId, tagId]);
         await db.query(
-          `insert into relation_video_tag (video_id, tag_id) VALUES ${values}`,
+          Sql.of("relation_video_tag")
+            .insert("video_id", "tag_id")
+            .values(...values)
+            .toString(),
         );
       }
       fs.renameSync(dirPath, path.resolve(process.env.video_dir, dirName));
@@ -182,5 +159,60 @@ export const deleteVideoOpts = {
       );
     });
     return { ok: true };
+  },
+};
+
+export const getVideoOpts = {
+  schema: {
+    params: {
+      type: "object",
+      required: ["vid"],
+      properties: {
+        vid: {
+          type: "integer",
+          minimum: 1,
+        },
+      },
+    },
+  },
+  async handler(req, reply) {
+    const { vid } = req.params;
+    const { rows } = await queryVideo({ idList: [vid] });
+    return { ok: true, data: rows };
+  },
+};
+
+export const getVideoEditDataOpts = {
+  schema: {
+    query: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: {
+          type: "integer",
+        },
+      },
+    },
+  },
+  async handler(req) {
+    const { id } = req.query;
+    const { rows } = await queryVideo({
+      idList: [id],
+    });
+    const data = rows[0];
+    data.coverImg = path.basename(data.coverImg);
+    return {
+      ok: true,
+      data,
+    };
+  },
+};
+
+export const updateVideoOpts = {
+  schema: {
+    body: genVideoBodySchema(true),
+  },
+  async handler(req) {
+    Sql.of("video").update();
   },
 };
