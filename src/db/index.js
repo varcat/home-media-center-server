@@ -257,7 +257,7 @@ export class Sql {
         text = `SELECT 0;`;
         break;
     }
-    console.log(text);
+    // console.log(text);
     return text;
   }
 }

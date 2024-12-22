@@ -2,8 +2,8 @@ import fastify from "fastify";
 import routes from "./routes/index.js";
 import { config } from "dotenv";
 
-config({ path: ".env" });
 config({ path: ".env.local" });
+config({ path: ".env" });
 
 const server = fastify();
 

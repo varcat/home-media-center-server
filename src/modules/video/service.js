@@ -28,6 +28,7 @@ export const getVideoList = {
     },
   },
   async handler(req, reply) {
+    console.log("fff");
     const { offset, limit, tags, title, releaseDate } = req.body;
     const { rows, count } = await queryVideo({
       offset,
