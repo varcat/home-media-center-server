@@ -4,6 +4,7 @@ import childProcess from "node:child_process";
 import { query, Sql, sqlFmt, transaction } from "../../db/index.js";
 import { genId, isVideo, toNginxUrl } from "../../utils/index.js";
 import { queryVideo } from "./dao.js";
+import * as os from "node:os";
 
 export const getVideoList = {
   schema: {
@@ -19,7 +20,6 @@ export const getVideoList = {
     },
   },
   async handler(req, reply) {
-    console.log("fff");
     const { offset, limit, tags, title, releaseDate } = req.body;
     const { rows, count } = await queryVideo({
       offset,
@@ -151,7 +151,9 @@ export const deleteVideoOpts = {
           .toString(),
       );
     });
-    fs.rmdirSync();
+    fs.rmdirSync(path.resolve(process.env.video_dir, req.body.path), {
+      recursive: true,
+    });
     return { ok: true };
   },
 };
@@ -244,11 +246,18 @@ export const openDirOpts = {
     },
   },
   async handler(req) {
-    childProcess.exec(
-      `open ${path.resolve(process.env.video_dir, req.body.path)}`,
-    );
+    if (os.type() === "Windows_NT") {
+      childProcess.exec(
+        `ii ${path.resolve(process.env.video_dir, req.body.path)}`,
+      );
+    } else {
+      childProcess.exec(
+        `open ${path.resolve(process.env.video_dir, req.body.path)}`,
+      );
+    }
     return {
       ok: true,
+      data: os.type(),
     };
   },
 };
