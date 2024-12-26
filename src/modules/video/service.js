@@ -1,17 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import {
-  query,
-  Sql,
-  sqlAnd,
-  sqlFmt,
-  sqlIn,
-  sqlLike,
-  transaction,
-} from "../../db/index.js";
-import { genId, toNginxUrl } from "../../utils/index.js";
-import { isEmpty, typeOf } from "wsp-toolkit";
-import { queryTag } from "../tag/dao.js";
+import childProcess from "node:child_process";
+import { query, Sql, sqlFmt, transaction } from "../../db/index.js";
+import { genId, isVideo, toNginxUrl } from "../../utils/index.js";
 import { queryVideo } from "./dao.js";
 
 export const getVideoList = {
@@ -140,9 +131,10 @@ export const deleteVideoOpts = {
   schema: {
     body: {
       type: "object",
-      required: ["id"],
+      required: ["id", "path"],
       properties: {
         id: { type: "integer" },
+        path: { type: "string" },
       },
     },
   },
@@ -159,6 +151,7 @@ export const deleteVideoOpts = {
           .toString(),
       );
     });
+    fs.rmdirSync();
     return { ok: true };
   },
 };
@@ -179,7 +172,27 @@ export const getVideoOpts = {
   async handler(req, reply) {
     const { vid } = req.params;
     const { rows } = await queryVideo({ idList: [vid] });
-    return { ok: true, data: rows };
+    const data = rows[0];
+
+    const processDir = (fileNameList) => {
+      return fileNameList.reduce((res, fileName) => {
+        if (isVideo(fileName)) {
+          const name = path.parse(fileName).name;
+          res.push({
+            id: name,
+            name,
+            link: toNginxUrl(data.path, fileName),
+          });
+        }
+        return res;
+      }, []);
+    };
+
+    data.episodeList = processDir(
+      fs.readdirSync(path.resolve(process.env.video_dir, data.path)),
+    );
+
+    return { ok: true, data };
   },
 };
 
@@ -215,5 +228,27 @@ export const updateVideoOpts = {
   },
   async handler(req) {
     Sql.of("video").update();
+  },
+};
+
+export const openDirOpts = {
+  schema: {
+    body: {
+      type: "object",
+      required: ["path"],
+      properties: {
+        path: {
+          type: "string",
+        },
+      },
+    },
+  },
+  async handler(req) {
+    childProcess.exec(
+      `open ${path.resolve(process.env.video_dir, req.body.path)}`,
+    );
+    return {
+      ok: true,
+    };
   },
 };
