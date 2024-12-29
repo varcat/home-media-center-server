@@ -229,7 +229,21 @@ export const updateVideoOpts = {
     body: genVideoBodySchema(true),
   },
   async handler(req) {
-    Sql.of("video").update();
+    const { tags, title, releaseDate, id, coverImgName, content } = req.body;
+    await query(
+      Sql.of("video")
+        .update({
+          title,
+          release_year: releaseDate,
+          cover_img: coverImgName,
+          content,
+        })
+        .and("id = %L", id),
+    );
+
+    return {
+      ok: true,
+    };
   },
 };
 
@@ -247,9 +261,11 @@ export const openDirOpts = {
   },
   async handler(req) {
     if (os.type() === "Windows_NT") {
-      childProcess.exec(
-        `ii ${path.resolve(process.env.video_dir, req.body.path)}`,
-      );
+      childProcess.spawn("pwsh.exe", [
+        "-Command",
+        "ii",
+        path.resolve(process.env.video_dir, req.body.path),
+      ]);
     } else {
       childProcess.exec(
         `open ${path.resolve(process.env.video_dir, req.body.path)}`,
@@ -257,7 +273,6 @@ export const openDirOpts = {
     }
     return {
       ok: true,
-      data: os.type(),
     };
   },
 };

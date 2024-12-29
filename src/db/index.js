@@ -139,6 +139,15 @@ export class Sql {
 
   update(data) {
     this.#operation = SqlOp.update;
+    this.#colNameList = [];
+    this.#values = [];
+    const value = [];
+    Object.entries(data).forEach(([k, v]) => {
+      if (isNil(v)) return;
+      this.#colNameList.push(k);
+      value.push(v);
+    });
+    this.#values.push(value);
     return this;
   }
 
@@ -199,6 +208,18 @@ export class Sql {
   toString() {
     let text = this.#text;
 
+    const getFields = () => this.#colNameList.join(",");
+    const getValues = () =>
+      this.#values
+        .map((row) => {
+          if (row.length !== this.#colNameList.length) {
+            throw new Error(
+              `粗心鬼，insert 的 columns.length 和 values.length 不相等`,
+            );
+          }
+          return `(${row.map((v) => sqlFmt("%L", v)).join(",")})`;
+        })
+        .join(",");
     const where = sqlAnd(this.#andConditions.concat(sqlOr(this.#orConditions)));
     const tableName = this.#tableNameAlias
       ? sqlFmt("%I AS %I", this.#tableName, this.#tableNameAlias)
@@ -224,22 +245,12 @@ export class Sql {
         break;
       case SqlOp.insert:
         if (isEmpty(this.#values)) break;
-        const fields = this.#colNameList.join(",");
+
         const returningFields = this.#colNameList.concat(
           this.#colNameList.includes("id") ? [] : ["id"],
         );
 
-        const values = this.#values.map((row) => {
-          console.log(this.#colNameList, row);
-          if (row.length !== this.#colNameList.length) {
-            throw new Error(
-              `粗心鬼，insert 的 columns.length 和 values.length 不相等`,
-            );
-          }
-          return `(${row.map((v) => sqlFmt("%L", v)).join(",")})`;
-        });
-
-        text = `INSERT INTO ${tableName} (${fields}) VALUES ${values.join(",")} RETURNING ${returningFields};`;
+        text = `INSERT INTO ${tableName} (${getFields()}) VALUES ${getValues()} RETURNING ${returningFields};`;
         break;
       case SqlOp.delete:
         if (isEmpty(where)) {
@@ -253,11 +264,22 @@ export class Sql {
           text += ` WHERE ${where}`;
         }
         break;
+      case SqlOp.update:
+        if (isEmpty(where)) {
+          throw new Error("怎么肥事？update 语句没有 where 条件哦");
+        }
+        const val = this.#colNameList
+          .map((k, i) => {
+            return sqlFmt("%I = %L", k, this.#values[0][i]);
+          })
+          .join(",");
+        text = `UPDATE ${tableName} SET ${val} WHERE ${where};`;
+        break;
       default:
         text = `SELECT 0;`;
         break;
     }
-    // console.log(text);
+    console.log(text);
     return text;
   }
 }
